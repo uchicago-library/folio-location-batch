@@ -125,29 +125,31 @@ def get_item_by_barcode_safe(client: FolioClient, barcode: str) -> tuple[int, ..
     query = f'?query=barcode=="{barcode}"'
     res = client.folio_get(path, None, query)
     items = res["items"]
-    n = res["totalRecords"]
+    num = res["totalRecords"]
     ret_obj = None
-    if n == 0:
+    if num == 0:
         pass
-    elif n == 1:
+    elif num == 1:
         ret_obj = items[0]
     else:
         ret_obj = items
-    return (n, ret_obj)
+    return (num, ret_obj)
 
 
-def delete_perm_location(rec):
+def delete_perm_location(rec) -> tuple[str, dict]:
     """
-    Delete the permanentLocation from the input item record.
+    Delete the permanentLocationId and permanentLocation from the input item record.
 
     Args:
         rec: dictionary loaded from a JSON record
 
     Returns:
-        The old permanentLocation as dictionary if exists, or None.
+        A tuple containing the old permanentLocationId (UUID) and the old permanentLocation (as dictionary).
     """
 
-    return rec.pop("permanentLocation", None)
+    old_loc_id = rec.pop("permanentLocationId", None)
+    old_loc = rec.pop("permanentLocation", None)
+    return (old_loc_id, old_loc)
 
 
 def put_item(client, item) -> tuple[int, str]:
@@ -175,23 +177,34 @@ def delete_location_loop(client, in_csv, out_csv):
 
     Writes an output row for each barcode.
     """
+    out_csv.writerow(["barcode", "status_code", "old_loc_id", "old_loc", "msg"])
 
     for row in in_csv:
         barcode = row[0]
         status_code = 0
+        old_loc_id = None
+        old_loc = None
+        msg = None
+
         item = get_item_by_barcode(client, barcode)
         if not item:
             msg = f"No item matching barcode {barcode}"
         else:
-            old_loc = delete_perm_location(item)
-            if not old_loc:
+            (old_loc_id, old_loc) = delete_perm_location(item)
+            if not old_loc_id and not old_loc:
                 msg = "Item had no permanentLocation"
             else:
                 (status_code, msg) = put_item(client, item)
-                if not msg:
-                    msg = "old location: " + old_loc["name"]
 
-        out_csv.writerow([barcode, status_code, msg])
+        out_csv.writerow(
+            [
+                barcode,
+                status_code,
+                old_loc_id,
+                old_loc["name"] if old_loc else None,
+                msg,
+            ]
+        )
 
 
 def delete_location_loop_safe(client, in_csv, out_csv):
@@ -209,11 +222,11 @@ def delete_location_loop_safe(client, in_csv, out_csv):
         barcode = row[0]
         status_code = 0
         msg = ""
-        (n, rec) = get_item_by_barcode_safe(client, barcode)
-        if n == 0:
+        (num, rec) = get_item_by_barcode_safe(client, barcode)
+        if num == 0:
             msg = f"No item matching barcode {barcode}"
-        elif n > 1:
-            msg = f"{n} items matched barcode {barcode}"
+        elif num > 1:
+            msg = f"{num} items matched barcode {barcode}"
         else:
             old_loc = delete_perm_location(rec)
             if not old_loc:
