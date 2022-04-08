@@ -4,6 +4,7 @@ import csv
 import json
 import logging
 import sys
+from datetime import datetime, timezone
 
 import requests
 from folioclient import FolioClient
@@ -57,6 +58,18 @@ def parse_args():
     )
     parser.add_argument(
         "-v", "--verbose", action="count", default=0, help="Increase verbosity level"
+    )
+    parser.add_argument(
+        "-f",
+        "--barcode_field",
+        default=0,
+        help=(
+            "field in input file containing the item barcode. "
+            "If this is an integer, it will be the zero-index number of the column. "
+            "Otherwise, this will be interpreted as a column name, a DictReader will be used, "
+            "and the fieldwill need to match a column header; "
+            "default: 0"
+        ),
     )
     return parser.parse_args()
 
@@ -168,7 +181,7 @@ def put_item(client, item) -> tuple[int, str]:
     return (req.status_code, req.text)
 
 
-def delete_location_loop(client, in_csv, out_csv):
+def delete_location_loop(client, in_csv, out_csv, barcode_field: int):
     """
     Delete permanent item location for all barcodes in the first column
 
@@ -176,11 +189,19 @@ def delete_location_loop(client, in_csv, out_csv):
     and deletes the permanent location.
 
     Writes an output row for each barcode.
+
+    Args:
+    client: intialized FolioClient object
+    in_csv: CSV reader object
+    out_csv: CSV writer object
+    barcode_field: input field where item barcode is found, 0-index
     """
-    out_csv.writerow(["barcode", "status_code", "old_loc_id", "old_loc", "msg"])
+    out_csv.writerow(
+        ["timestamp", "barcode", "status_code", "old_loc_id", "old_loc", "msg"]
+    )
 
     for row in in_csv:
-        barcode = row[0]
+        barcode = row[barcode_field]
         status_code = 0
         old_loc_id = None
         old_loc = None
@@ -198,6 +219,7 @@ def delete_location_loop(client, in_csv, out_csv):
 
         out_csv.writerow(
             [
+                datetime.now(timezone.utc),
                 barcode,
                 status_code,
                 old_loc_id,
@@ -257,11 +279,24 @@ def main():
         config["Okapi"]["password"],
     )
 
+    # Check whether barcode_field looks like an integer or a string and
+    # set the CSV reader class accordingly
+    # NOTE: it is possible this will error on numeric, non-decimal characters, like a fraction
+    reader_class = None
+    barcode_field = None
+    if isinstance(args.barcode_field, int) or args.barcode_field.isnumeric():
+        barcode_field = int(args.barcode_field)
+        reader_class = csv.reader
+    else:
+        barcode_field = args.barcode_field
+        reader_class = csv.DictReader
+
     # main_loop(client, args.infile, args.outfile)
     delete_location_loop(
         client,
-        csv.reader(args.infile, dialect="excel-tab"),
+        reader_class(args.infile, dialect="excel-tab"),
         csv.writer(args.outfile, dialect="excel-tab"),
+        barcode_field,
     )
     return 0
 
