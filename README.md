@@ -1,5 +1,5 @@
-# folio-template-python
-Scaffolding for FOLIO scripts in Python
+# folio-utils
+A set of utilities for automating some tasks in FOLIO
 
 ## Requirements
 
