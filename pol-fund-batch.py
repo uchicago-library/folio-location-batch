@@ -1,12 +1,13 @@
 import argparse
 import configparser
 import csv
+import json
 import logging
 import sys
 from datetime import datetime, timezone
 
+import requests
 from folioclient import FolioClient
-import json
 
 
 def error_exit(status, msg):
@@ -70,6 +71,9 @@ def get_pol_by_line_no(client: FolioClient, pol_no: str) -> dict:
 
     Returns:
         A dictionary object containing the POL data.
+
+    Raises:
+        Exception if more than one POL matches the pol_no.
     """
     path = "/orders/order-lines"
     query = f'?query=poLineNumber=="{pol_no}"'
@@ -84,6 +88,30 @@ def get_pol_by_line_no(client: FolioClient, pol_no: str) -> dict:
 
     pol = res["poLines"][0]
     return pol
+
+
+def set_pol_fund(client: FolioClient, pol: dict, fund: str) -> tuple[str, str]:
+    """
+    Set the fund for the POL.
+
+    If there is more than one fund distribution, this will update all fund distributions to the new value
+
+    Args:
+        client: intialized FolioClient object
+        pol_no: POL number
+        fund: new fund code to assign
+
+    Returns:
+        Tuple of HTTP status code and message if error.
+    """
+    url = f"{client.okapi_url}/orders/order-lines/{pol['id']}"
+
+    for fd in pol["fundDistribution"]:
+        fd["code"] = fund
+
+    r = requests.put(url, headers=client.okapi_headers, data=json.dumps(pol))
+
+    return (r.status_code, r.text)
 
 
 def write_result(out, output):
@@ -111,23 +139,29 @@ def main_loop(client, in_csv, out_csv):
         pol_no = row[0]
         fund = row[1]
         pol_id = None
-        status = None
+        status_code = None
         msg = None
         # result = process_pol(client, pol_no, fund)
         pol = get_pol_by_line_no(client, pol_no)
         if pol is None:
-            msg = f"No POL found for line number '{pol_no}'"
-        else:
-            # write_result(outfile, result)
-            pol_id = pol["id"]
-            pass
+            out_csv.writerow(
+                {
+                    "timestamp": datetime.now(timezone.utc),
+                    "pol_no": pol_no,
+                    "fund": fund,
+                    "message": f"No POL found for line number '{pol_no}'",
+                }
+            )
+            continue
 
+        (status_code, msg) = set_pol_fund(client, pol, fund)
         out_csv.writerow(
             {
                 "timestamp": datetime.now(timezone.utc),
                 "pol_no": pol_no,
                 "fund": fund,
-                "status": status,
+                "pol_id": pol["id"],
+                "status_code": status_code,
                 "message": msg,
             }
         )
@@ -145,7 +179,7 @@ def main():
         config["Okapi"]["password"],
     )
 
-    fieldnames = ["timestamp", "pol_no", "fund", "pol_id", "status", "message"]
+    fieldnames = ["timestamp", "pol_no", "fund", "pol_id", "status_code", "message"]
     main_loop(
         client,
         csv.reader(args.infile, dialect="excel-tab"),
