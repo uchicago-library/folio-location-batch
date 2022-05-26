@@ -3,8 +3,10 @@ import configparser
 import csv
 import logging
 import sys
+from datetime import datetime, timezone
 
 from folioclient import FolioClient
+import json
 
 
 def error_exit(status, msg):
@@ -58,14 +60,30 @@ def parse_args():
     return parser.parse_args()
 
 
-def parse_data(line):
-    """Placeholder function for parsing input data"""
-    return line
+def get_pol_by_line_no(client: FolioClient, pol_no: str) -> dict:
+    """
+    Look up POL buy line number.
 
+    Args:
+        client: intialized FolioClient object
+        pol_no: POL number
 
-def process_data(client, pol_no, fund):
-    """Placeholder for processing the data"""
-    return [pol_no, fund]
+    Returns:
+        A dictionary object containing the POL data.
+    """
+    path = "/orders/order-lines"
+    query = f'?query=poLineNumber=="{pol_no}"'
+    res = client.folio_get(path, None, query)
+
+    if res["totalRecords"] == 0:
+        return None
+    elif res["totalRecords"] > 1:
+        raise Exception(
+            f'query for POL num {pol_no} resulted in {res["totalRecords"]} results, should be unique'
+        )
+
+    pol = res["poLines"][0]
+    return pol
 
 
 def write_result(out, output):
@@ -87,14 +105,32 @@ def main_loop(client, in_csv, out_csv):
     in_csv: CSV reader object
     out_csv: CSV writer object
     """
-    
+    out_csv.writeheader()
+
     for row in in_csv:
         pol_no = row[0]
-        fund = row [1]
-        result = process_data(client, pol_no, fund)
-        
-        # write_result(outfile, result)
-        out_csv.writerow(result)
+        fund = row[1]
+        pol_id = None
+        status = None
+        msg = None
+        # result = process_pol(client, pol_no, fund)
+        pol = get_pol_by_line_no(client, pol_no)
+        if pol is None:
+            msg = f"No POL found for line number '{pol_no}'"
+        else:
+            # write_result(outfile, result)
+            pol_id = pol["id"]
+            pass
+
+        out_csv.writerow(
+            {
+                "timestamp": datetime.now(timezone.utc),
+                "pol_no": pol_no,
+                "fund": fund,
+                "status": status,
+                "message": msg,
+            }
+        )
 
 
 def main():
@@ -109,7 +145,12 @@ def main():
         config["Okapi"]["password"],
     )
 
-    main_loop(client, csv.reader(args.infile, dialect="excel-tab"), csv.writer(args.outfile, dialect="excel-tab"))
+    fieldnames = ["timestamp", "pol_no", "fund", "pol_id", "status", "message"]
+    main_loop(
+        client,
+        csv.reader(args.infile, dialect="excel-tab"),
+        csv.DictWriter(args.outfile, fieldnames=fieldnames, dialect="excel-tab"),
+    )
     return 0
 
 
