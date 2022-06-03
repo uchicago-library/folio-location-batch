@@ -4,6 +4,7 @@ import csv
 import json
 import logging
 import sys
+import uuid
 from datetime import datetime, timezone
 
 import requests
@@ -61,6 +62,18 @@ def parse_args():
     return parser.parse_args()
 
 
+def get_funds(client: FolioClient) -> dict:
+    """
+    Returns a dictionary of all funds, indexed by fund code
+
+    Args:
+        client: intialized FolioClient object
+    """
+    funds = {}
+    for f in client.get_all('/finance/funds', "funds"):
+        funds[f["code"]] = f
+    return funds
+
 def get_pol_by_line_no(client: FolioClient, pol_no: str) -> dict:
     """
     Look up POL buy line number.
@@ -81,7 +94,7 @@ def get_pol_by_line_no(client: FolioClient, pol_no: str) -> dict:
 
     if res["totalRecords"] == 0:
         return None
-    elif res["totalRecords"] > 1:
+    if res["totalRecords"] > 1:
         raise Exception(
             f'query for POL num {pol_no} resulted in {res["totalRecords"]} results, should be unique'
         )
@@ -90,16 +103,17 @@ def get_pol_by_line_no(client: FolioClient, pol_no: str) -> dict:
     return pol
 
 
-def set_pol_fund(client: FolioClient, pol: dict, fund: str) -> tuple[str, str]:
+def set_pol_fund(client: FolioClient, pol: dict, fund_code: str, funds: dict, err_fp) -> tuple[str, str]:
     """
     Set the fund for the POL.
 
-    If there is more than one fund distribution, this will update all fund distributions to the new value
+    If there is more than one fund distribution, this will update all fund distributions to the new fund
 
     Args:
         client: intialized FolioClient object
         pol_no: POL number
-        fund: new fund code to assign
+        fund_code: new fund_code code to assign
+        funds: dictionary of funds indexed by code
 
     Returns:
         Tuple of HTTP status code and message if error.
@@ -107,11 +121,42 @@ def set_pol_fund(client: FolioClient, pol: dict, fund: str) -> tuple[str, str]:
     url = f"{client.okapi_url}/orders/order-lines/{pol['id']}"
 
     for fd in pol["fundDistribution"]:
-        fd["code"] = fund
+        fd["code"] = fund_code
+        fd["fundId"] = funds[fund_code]["id"]
+        fd["encumbrance"] = str(uuid.uuid4())
 
     r = requests.put(url, headers=client.okapi_headers, data=json.dumps(pol))
 
     return (r.status_code, r.text)
+
+
+def reset_fund_dist(client: FolioClient, fundDist, fund_code: str, funds: dict) -> tuple[str, str]:
+    """
+    Update all fund_code distributions.
+
+    For each fund_code distribution, first release the encumbrance.
+    """
+    status_code = None
+    msg = None
+
+    for fdist in fundDist:
+        # release current encumbrance
+        release_url = f"/finance/release-encumbrance/{fdist['encumbrance']}"
+        r = requests.put(release_url, headers=client.okapi_headers)
+        status_code = r.status_code
+        msg = r.text
+        if status_code != "204":
+            return (status_code, json.dumps(msg))
+
+        new_fdist = fdist.copy()
+        new_fdist["code"] = fund_code
+        new_fdist["fundID"] = funds[code]["id"]
+        pop(new_fdist, "encumbrance", None)
+        # new_fdist["reEncumber"] = "true"
+
+        # re-encumber to new fund_code code
+        pass
+    return (status_code, msg)
 
 
 def write_result(out, output):
@@ -119,7 +164,7 @@ def write_result(out, output):
     out.write(output)
 
 
-def main_loop(client, in_csv, out_csv):
+def main_loop(client, in_csv, out_csv, err_fp):
     """
     Update the fund code for each POL in input.
 
@@ -129,10 +174,13 @@ def main_loop(client, in_csv, out_csv):
     Writes an output row for each POL.
 
     Args:
-    client: intialized FolioClient object
+    client: initialized FolioClient object
     in_csv: CSV reader object
     out_csv: CSV writer object
+    err_fp: file pointer for error messages
     """
+    funds = get_funds(client)
+    
     out_csv.writeheader()
 
     for row in in_csv:
@@ -143,6 +191,7 @@ def main_loop(client, in_csv, out_csv):
         msg = None
         # result = process_pol(client, pol_no, fund)
         pol = get_pol_by_line_no(client, pol_no)
+
         if pol is None:
             out_csv.writerow(
                 {
@@ -154,7 +203,29 @@ def main_loop(client, in_csv, out_csv):
             )
             continue
 
-        (status_code, msg) = set_pol_fund(client, pol, fund)
+        # Check if there is more than one fund distribution, report for manual review if so
+        if len(pol["fundDistribution"]) < 1:
+            out_csv.writerow(
+                {
+                    "timestamp": datetime.now(timezone.utc),
+                    "pol_no": pol_no,
+                    "message": f"Need manual review: POL has {len(pol['fundDistribution'])} fund distributions",
+                }
+            )
+            continue
+
+        # This code is from when we thought we would have to update fund distributions individually.
+        # Now it looks like the /orders/order-lines API takes care of this in the business logic.
+        # Remove this code when we confirm.
+        if False:
+            fundDist = pol["fundDistribution"]
+            (status_code, msg) = reset_fund_dist(client, fundDist, fund)
+            if status_code == "204":
+                (status_code, msg) = set_pol_fund(client, pol, fund)
+            pass
+
+        (status_code, msg) = set_pol_fund(client, pol, fund, funds, err_fp)
+
         out_csv.writerow(
             {
                 "timestamp": datetime.now(timezone.utc),
@@ -184,6 +255,7 @@ def main():
         client,
         csv.reader(args.infile, dialect="excel-tab"),
         csv.DictWriter(args.outfile, fieldnames=fieldnames, dialect="excel-tab"),
+        sys.stderr,
     )
     return 0
 
