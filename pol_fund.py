@@ -70,9 +70,10 @@ def get_funds(client: FolioClient) -> dict:
         client: intialized FolioClient object
     """
     funds = {}
-    for f in client.get_all('/finance/funds', "funds"):
+    for f in client.get_all("/finance/funds", "funds"):
         funds[f["code"]] = f
     return funds
+
 
 def get_pol_by_line_no(client: FolioClient, pol_no: str) -> dict:
     """
@@ -103,7 +104,9 @@ def get_pol_by_line_no(client: FolioClient, pol_no: str) -> dict:
     return pol
 
 
-def set_pol_fund(client: FolioClient, pol: dict, fund_code: str, funds: dict, err_fp) -> tuple[str, str]:
+def set_pol_fund(
+    client: FolioClient, pol: dict, fund_code: str, funds: dict, err_fp
+) -> tuple[str, str]:
     """
     Set the fund for the POL.
 
@@ -130,7 +133,9 @@ def set_pol_fund(client: FolioClient, pol: dict, fund_code: str, funds: dict, er
     return (r.status_code, r.text)
 
 
-def reset_fund_dist(client: FolioClient, fundDist, fund_code: str, funds: dict) -> tuple[str, str]:
+def reset_fund_dist(
+    client: FolioClient, fundDist, fund_code: str, funds: dict
+) -> tuple[str, str]:
     """
     Update all fund_code distributions.
 
@@ -180,7 +185,7 @@ def main_loop(client, in_csv, out_csv, err_fp):
     err_fp: file pointer for error messages
     """
     funds = get_funds(client)
-    
+
     out_csv.writeheader()
 
     for row in in_csv:
@@ -189,6 +194,19 @@ def main_loop(client, in_csv, out_csv, err_fp):
         pol_id = None
         status_code = None
         msg = None
+
+        # check whether the new fund code actually exists, report error and move on if it does not.
+        if funds.get(fund) is None:
+            out_csv.writerow(
+                {
+                    "timestamp": datetime.now(timezone.utc),
+                    "pol_no": pol_no,
+                    "fund": fund,
+                    "message": "fund code does not exist",
+                }
+            )
+            continue
+
         # result = process_pol(client, pol_no, fund)
         pol = get_pol_by_line_no(client, pol_no)
 
@@ -203,6 +221,7 @@ def main_loop(client, in_csv, out_csv, err_fp):
             )
             continue
 
+        # TODO: correct and test check for multiple fund distributions
         # Check if there is more than one fund distribution, report for manual review if so
         if len(pol["fundDistribution"]) < 1:
             out_csv.writerow(
