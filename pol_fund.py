@@ -221,9 +221,17 @@ def main_loop(client, in_csv, out_csv, err_fp):
             )
             continue
 
-        # TODO: correct and test check for multiple fund distributions
+        if pol.get("fundDistribution") is None or len(pol["fundDistribution"]) == 0:
+            out_csv.writerow(
+                {
+                    "timestamp": datetime.now(timezone.utc),
+                    "pol_no": pol_no,
+                    "message": "POL has 0 fund distributions",
+                }
+            )
+            continue
         # Check if there is more than one fund distribution, report for manual review if so
-        if len(pol["fundDistribution"]) < 1:
+        if len(pol["fundDistribution"]) > 1:
             out_csv.writerow(
                 {
                     "timestamp": datetime.now(timezone.utc),
