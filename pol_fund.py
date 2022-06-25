@@ -281,7 +281,7 @@ def main():
     main_loop(
         client,
         csv.reader(args.infile, dialect="excel-tab"),
-        csv.DictWriter(args.outfile, fieldnames=fieldnames, dialect="excel-tab"),
+        csv.DictWriter(args.outfile, fieldnames=fieldnames, dialect="excel"),
         sys.stderr,
     )
     return 0
