@@ -123,9 +123,12 @@ def set_pol_fund(
     """
     url = f"{client.okapi_url}/orders/order-lines/{pol['id']}"
 
+    # TODO: release old encumbrances
+
     for fd in pol["fundDistribution"]:
         fd["code"] = fund_code
         fd["fundId"] = funds[fund_code]["id"]
+        # setting new encummbrance ID causes an a new encumbrance to be created on the fund
         fd["encumbrance"] = str(uuid.uuid4())
 
     r = requests.put(url, headers=client.okapi_headers, data=json.dumps(pol))
