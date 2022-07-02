@@ -1,17 +1,22 @@
+"""Update the funds in purchase order lines.
+"""
+
 import argparse
 import configparser
+import copy
 import csv
 import json
 import logging
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import requests
 from folioclient import FolioClient
 
 
 def error_exit(status, msg):
+    """Convenience function to write out an error message and terminate with an exit status."""
     sys.stderr.write(msg)
     sys.exit(status)
 
@@ -62,6 +67,39 @@ def parse_args():
     return parser.parse_args()
 
 
+def get_fiscal_year(client: FolioClient) -> dict:
+    """
+    Returns current fiscal year as a dictionary
+
+    This implementation uses the Python date objects, which are naive about timezones and work at the full day level.
+    FY start and end are formatted as full ISO dates, but seem to apply to the whole day.
+    Looking at real data from Lotus, observe that the end of FY2022 is a full 24 hour before the start of FY2023:
+
+    FY2022:
+    "periodStart": "2021-07-01T05:00:00.000+00:00",
+    "periodEnd": "2022-06-25T00:00:00.000+00:00",
+
+    FY2023:
+    "periodStart": "2022-06-26T00:00:00.000+00:00",
+    "periodEnd": "2023-06-30T00:00:00.000+00:00",
+
+    Args:
+        client: intialized FolioClient object
+
+    Returns:
+        A dictionary containing the current fiscal year, None if there is no fiscal year covering the current date.
+    """
+    today = date.today()
+    fyList = client.folio_get("/finance/fiscal-years")["fiscalYears"]
+    for fy in fyList:
+        start = datetime.fromisoformat(fy["periodStart"]).date()
+        end = datetime.fromisoformat(fy["periodEnd"]).date()
+        if start <= today and today <= end:
+            return fy
+
+    return None
+
+
 def get_funds(client: FolioClient) -> dict:
     """
     Returns a dictionary of all funds, indexed by fund code
@@ -77,7 +115,7 @@ def get_funds(client: FolioClient) -> dict:
 
 def get_pol_by_line_no(client: FolioClient, pol_no: str) -> dict:
     """
-    Look up POL buy line number.
+    Look up POL by line number.
 
     Args:
         client: intialized FolioClient object
@@ -104,36 +142,81 @@ def get_pol_by_line_no(client: FolioClient, pol_no: str) -> dict:
     return pol
 
 
+def get_encumbrances(client: FolioClient, pol_id: str, fy_id: str) -> list:
+    enc_result = client.folio_get(
+        "/finance-storage/transactions",
+        query=f"?query=(encumbrance.sourcePoLineId={pol_id} and fiscalYearId={fy_id})",
+    )
+    return enc_result["transactions"]
+
+
 def set_pol_fund(
-    client: FolioClient, pol: dict, fund_code: str, funds: dict, err_fp
-) -> tuple[str, str]:
+    client: FolioClient,
+    pol: dict,
+    fund_code: str,
+    funds: dict,
+    fiscal_year: dict,
+    verbose: bool,
+    err_fp,
+) -> tuple[str, str, str]:
     """
-    Set the fund for the POL.
+    Set the fund for the POL, release encumbrance on old fund and re-encumber on new fund.
 
     If there is more than one fund distribution, this will update all fund distributions to the new fund
 
     Args:
         client: intialized FolioClient object
-        pol_no: POL number
+        pol: purchase order line as dictionary
         fund_code: new fund_code code to assign
         funds: dictionary of funds indexed by code
+        fiscal_year: current fiscal year as dictionary
 
     Returns:
-        Tuple of HTTP status code and message if error.
+        Tuple of HTTP status code, plus message and original fund distribution list if error.
     """
-    url = f"{client.okapi_url}/orders/order-lines/{pol['id']}"
+    pol_path = f"/orders/order-lines/{pol['id']}"
+    pol_url = f"{client.okapi_url}/orders/order-lines/{pol['id']}"
 
     # TODO: release old encumbrances
 
-    for fd in pol["fundDistribution"]:
-        fd["code"] = fund_code
-        fd["fundId"] = funds[fund_code]["id"]
-        # setting new encummbrance ID causes an a new encumbrance to be created on the fund
-        fd["encumbrance"] = str(uuid.uuid4())
+    fundDistList = pol["fundDistribution"]
+    fundDistListOrig = copy.deepcopy(fundDistList)
 
-    r = requests.put(url, headers=client.okapi_headers, data=json.dumps(pol))
+    # Identify the current Fiscal Year
 
-    return (r.status_code, r.text)
+    if verbose:
+        err_fp.write("original POL fund dist:\n")
+        json.dump(pol["fundDistribution"], err_fp, indent=2)
+        err_fp.write("\nEND original POL fund dist:\n")
+
+    # Encumber on the new fund
+    for fdist in fundDistList:
+        fdist["code"] = fund_code
+        fdist["fundId"] = funds[fund_code]["id"]
+        # setting new encumbrance ID causes an a new encumbrance to be created on the fund
+        fdist["encumbrance"] = str(uuid.uuid4())
+
+    if verbose:
+        err_fp.write("updated POL fund dist:\n")
+        json.dump(pol["fundDistribution"], err_fp, indent=2)
+        err_fp.write("\nEND updated POL fund dist:\n")
+    resp = requests.put(pol_url, headers=client.okapi_headers, data=json.dumps(pol))
+
+    if verbose:
+        err_fp.write(pol_url + "\n")
+        err_fp.write(f"status = {resp.status_code};\ntext = {resp.text}\n")
+        err_fp.write(pol_url + "\n")
+
+    # Check updated POL...
+    updated_pol = client.folio_get(pol_path)
+    if verbose:
+        err_fp.write("updated POL fund dist:\n")
+        json.dump(updated_pol["fundDistribution"], err_fp, indent=2)
+        err_fp.write("\nEND updated POL fund dist:\n")
+
+    # ... and return the update results if the check is good
+
+    return (resp.status_code, resp.text, json.dumps(fundDistListOrig))
 
 
 def reset_fund_dist(
@@ -150,7 +233,7 @@ def reset_fund_dist(
     for fdist in fundDist:
         # release current encumbrance
         release_url = f"/finance/release-encumbrance/{fdist['encumbrance']}"
-        r = requests.put(release_url, headers=client.okapi_headers)
+        r = requests.post(release_url, headers=client.okapi_headers)
         status_code = r.status_code
         msg = r.text
         if status_code != "204":
@@ -172,7 +255,7 @@ def write_result(out, output):
     out.write(output)
 
 
-def main_loop(client, in_csv, out_csv, err_fp):
+def main_loop(client, in_csv, out_csv, verbose: bool, err_fp):
     """
     Update the fund code for each POL in input.
 
@@ -188,6 +271,7 @@ def main_loop(client, in_csv, out_csv, err_fp):
     err_fp: file pointer for error messages
     """
     funds = get_funds(client)
+    fiscal_year = get_fiscal_year(client)
 
     out_csv.writeheader()
 
@@ -206,6 +290,7 @@ def main_loop(client, in_csv, out_csv, err_fp):
                     "pol_no": pol_no,
                     "fund": fund,
                     "message": "fund code does not exist",
+                    "manual_review": "Y",
                 }
             )
             continue
@@ -220,6 +305,7 @@ def main_loop(client, in_csv, out_csv, err_fp):
                     "pol_no": pol_no,
                     "fund": fund,
                     "message": f"No POL found for line number '{pol_no}'",
+                    "manual_review": "Y",
                 }
             )
             continue
@@ -230,6 +316,7 @@ def main_loop(client, in_csv, out_csv, err_fp):
                     "timestamp": datetime.now(timezone.utc),
                     "pol_no": pol_no,
                     "message": "POL has 0 fund distributions",
+                    "manual_review": "Y",
                 }
             )
             continue
@@ -239,10 +326,50 @@ def main_loop(client, in_csv, out_csv, err_fp):
                 {
                     "timestamp": datetime.now(timezone.utc),
                     "pol_no": pol_no,
-                    "message": f"Need manual review: POL has {len(pol['fundDistribution'])} fund distributions",
+                    "message": f"POL has {len(pol['fundDistribution'])} fund distributions",
+                    "manual_review": "Y",
                 }
             )
             continue
+
+        #
+        # Get encumbrances on this POL from this Fiscal Year and release
+        #
+
+        # enc_list = get_encumbrances(client, pol['id'], fiscal_year['id'])
+        enc_list = client.folio_get(
+            "/finance-storage/transactions",
+            key="transactions",
+            query=f"?query=(encumbrance.sourcePoLineId={pol['id']} and fiscalYearId={fiscal_year['id']} and encumbrance.status=Unreleased)",
+        )
+        if len(enc_list) != 1:
+            out_csv.writerow(
+                {
+                    "timestamp": datetime.now(timezone.utc),
+                    "pol_no": pol_no,
+                    "message": f"POL has {len(enc_list)} unreleased encumbrances",
+                    "manual_review": "Y",
+                }
+            )
+            continue
+        for enc in enc_list:
+            resp = requests.post(
+                client.okapi_url + f"/finance/release-encumbrance/{enc['id']}",
+                json={"id": enc["id"]},
+                headers=client.okapi_headers,
+            )
+            if resp.status_code != 204:
+                out_csv.writerow(
+                    {
+                        "timestamp": datetime.now(timezone.utc),
+                        "pol_no": pol_no,
+                        "status_code": resp.status_code,
+                        "message": "failed to release encumbrance: "
+                        + json.dumps(resp.text),
+                        "manual_review": "Y",
+                    }
+                )
+                continue
 
         # This code is from when we thought we would have to update fund distributions individually.
         # Now it looks like the /orders/order-lines API takes care of this in the business logic.
@@ -254,7 +381,9 @@ def main_loop(client, in_csv, out_csv, err_fp):
                 (status_code, msg) = set_pol_fund(client, pol, fund)
             pass
 
-        (status_code, msg) = set_pol_fund(client, pol, fund, funds, err_fp)
+        (status_code, msg, fundDistOrig) = set_pol_fund(
+            client, pol, fund, funds, fiscal_year, verbose, err_fp
+        )
 
         out_csv.writerow(
             {
@@ -264,11 +393,14 @@ def main_loop(client, in_csv, out_csv, err_fp):
                 "pol_id": pol["id"],
                 "status_code": status_code,
                 "message": msg,
+                "original_fund_distribution": fundDistOrig,
+                "manual_review": "N",
             }
         )
 
 
 def main():
+    verbose = False
     args = parse_args()
     config = read_config(args.config_file)
     # Logic or function to override config values from the command line arguments would go here
@@ -280,11 +412,21 @@ def main():
         config["Okapi"]["password"],
     )
 
-    fieldnames = ["timestamp", "pol_no", "fund", "pol_id", "status_code", "message"]
+    fieldnames = [
+        "timestamp",
+        "pol_no",
+        "fund",
+        "pol_id",
+        "status_code",
+        "message",
+        "original_fund_distribution",
+        "manual_review",
+    ]
     main_loop(
         client,
         csv.reader(args.infile, dialect="excel-tab"),
         csv.DictWriter(args.outfile, fieldnames=fieldnames, dialect="excel"),
+        verbose,
         sys.stderr,
     )
     return 0
