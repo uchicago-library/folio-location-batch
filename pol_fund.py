@@ -13,6 +13,7 @@ from datetime import date, datetime, timezone
 
 import requests
 from folioclient import FolioClient
+from folioclient.FolioClient import FolioClient
 
 
 def error_exit(status, msg):
@@ -34,6 +35,21 @@ def read_config(filename: str):
         msg = f"{type(err).__name__}: {err}\n"
         error_exit(2, msg)
     return config
+
+def init_client(config):
+    """Returns an initialized client object
+    
+    This small function is convenient when using the interactive interpreter.
+
+    Args:
+        config: ConfigParser object contianing config file data
+    """
+    return FolioClient(
+        config["Okapi"]["okapi_url"],
+        config["Okapi"]["tenant_id"],
+        config["Okapi"]["username"],
+        config["Okapi"]["password"],
+    )
 
 
 def parse_args():
@@ -268,6 +284,7 @@ def main_loop(client, in_csv, out_csv, verbose: bool, err_fp):
     client: initialized FolioClient object
     in_csv: CSV reader object
     out_csv: CSV writer object
+    verbose: enable more diagnostic messages to the error output
     err_fp: file pointer for error messages
     """
     funds = get_funds(client)
@@ -405,12 +422,7 @@ def main():
     config = read_config(args.config_file)
     # Logic or function to override config values from the command line arguments would go here
 
-    client = FolioClient(
-        config["Okapi"]["okapi_url"],
-        config["Okapi"]["tenant_id"],
-        config["Okapi"]["username"],
-        config["Okapi"]["password"],
-    )
+    client = init_client(config)
 
     fieldnames = [
         "timestamp",
