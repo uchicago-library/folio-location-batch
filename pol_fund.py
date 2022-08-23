@@ -36,9 +36,10 @@ def read_config(filename: str):
         error_exit(2, msg)
     return config
 
+
 def init_client(config):
     """Returns an initialized client object
-    
+
     This small function is convenient when using the interactive interpreter.
 
     Args:
@@ -56,30 +57,52 @@ def parse_args():
     """Parse command line arguments and return a Namespace object."""
 
     parser = argparse.ArgumentParser(
-        description="Update the fund code on purchase order lines",
+        description="Update the fund code on purchase order lines.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        # formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "-i",
         "--infile",
-        help="Input file (default: stdin)",
+        help="input file (default: stdin)",
         default=sys.stdin,
         type=argparse.FileType("r"),
     )
     parser.add_argument(
         "-o",
         "--outfile",
-        help="Output file (truncate if exists, default: stdout)",
+        help="output file (truncate if exists, default: stdout)",
         default=sys.stdout,
         type=argparse.FileType("w"),
     )
     parser.add_argument(
-        "-C", "--config_file", help="Name of config file", default="config.ini"
+        "-I",
+        "--in_dialect",
+        help="input CSV dialect (default: excel)",
+        default="excel",
+    )
+    parser.add_argument(
+        "-O",
+        "--out_dialect",
+        help="output CSV dialect (default: excel)",
+        default="excel",
+    )
+    parser.add_argument(
+        "-C", "--config_file", help="name of config file", default="config.ini"
     )
     parser.add_argument(
         "-v", "--verbose", action="count", default=0, help="Increase verbosity level"
     )
-    parser.epilog = "In the input file, column 0 must contain the purchase order line no., and column 1 must contain the fund code."
+    parser.epilog = (
+        "Input file column 0 must contain the PO line no., column 1 must contain the fund code.\n"
+        + "\n"
+        + "Input and output files can be in any dialect the csv parser class understands:\n"
+        + "\t"
+        + ", ".join(csv.list_dialects())
+        + "\n"
+        + "See https://docs.python.org/3/library/csv.html for more details"
+    )
+
     return parser.parse_args()
 
 
@@ -436,8 +459,8 @@ def main():
     ]
     main_loop(
         client,
-        csv.reader(args.infile, dialect="excel-tab"),
-        csv.DictWriter(args.outfile, fieldnames=fieldnames, dialect="excel"),
+        csv.reader(args.infile, dialect=args.in_dialect),
+        csv.DictWriter(args.outfile, fieldnames=fieldnames, dialect=args.out_dialect),
         verbose,
         sys.stderr,
     )
