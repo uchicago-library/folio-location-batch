@@ -70,12 +70,7 @@ def parse_args():
         description="Re-encumber funds on purchase order lines",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument(
-        "-p",
-        "--print",
-        help="Read classes and print them out without active program run.",
-        default=sys.stdout,
-    )
+
     parser.add_argument(
         "-D",
         "--dump_expense_classes",
@@ -415,7 +410,6 @@ def main():
 
         for x in range(len(fieldnames)):
             print(fieldnames[x], "    ", end="")
-
 
     sys.exit(0)
 
