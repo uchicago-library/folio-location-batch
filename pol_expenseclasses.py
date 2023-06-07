@@ -1,4 +1,4 @@
-"""Re-encumber funds on purchase order lines.
+"""Reset expense classes on purchase order lines.
 This script is useful in cleaning up after FYRO.
 If you identify POLs that had encumbrances in the old fiscal year,
 but FYRO did not create new encumbrances in the new fiscal year,
@@ -138,6 +138,17 @@ def get_fiscal_year(client: FolioClient, code: str) -> dict:
             return fy
 
     return None
+
+def get_expense_classes(client: FolioClient) -> dict:
+    """
+    Returns a dictionary of all expense classe, indexed by fund code
+    Args:
+        client: intialized FolioClient object
+    """
+    expclasses = {}
+    for ec in client.get_all("/finance/expense-classes", "expenseClasses"):
+        expclasses[ec["code"]] = ec
+    return expclasses
 
 
 def get_funds(client: FolioClient) -> dict:
@@ -406,12 +417,12 @@ def main():
         "manual_review",
     ]
 
+    ecDict = get_expense_classes(client)
+    
     if args.dump_expense_classes:
-
-        for x in range(len(fieldnames)):
-            print(fieldnames[x], "    ", end="")
-
-    sys.exit(0)
+        for ec in ecDict.values():
+            print(f'{ec["code"]}\t{ec["name"]}\t{ec["id"]}')
+        sys.exit(0)
 
     main_loop(
         client,
