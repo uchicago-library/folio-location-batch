@@ -9,7 +9,7 @@ Workflow:
 3. Put new encumbrance ids in the fund distribution that was saved in memory, re-add to the POL and save. This should trigger new encumbrance transaction, keep the same funds, the same expense classes, and the same distribution type and value.
 """
 
- #feature branch
+# feature branch
 
 
 import argparse
@@ -111,13 +111,13 @@ def parse_args():
         "-v", "--verbose", action="count", default=0, help="Increase verbosity level"
     )
     parser.epilog = (
-            "Input file column 0 must contain the PO line no., column 1 must contain the fund code.\n"
-            + "\n"
-            + "Input and output files can be in any dialect the csv parser class understands:\n"
-            + "\t"
-            + ", ".join(csv.list_dialects())
-            + "\n"
-            + "See https://docs.python.org/3/library/csv.html for more details"
+        "Input file column 0 must contain the PO line no., column 1 must contain the fund code.\n"
+        + "\n"
+        + "Input and output files can be in any dialect the csv parser class understands:\n"
+        + "\t"
+        + ", ".join(csv.list_dialects())
+        + "\n"
+        + "See https://docs.python.org/3/library/csv.html for more details"
     )
     return parser.parse_args()
 
@@ -134,10 +134,11 @@ def get_fiscal_year(client: FolioClient, code: str) -> dict:
     # TODO: modify query to only return the needed fiscal year (can't seem to get this right)
     fyList = client.folio_get("/finance/fiscal-years")["fiscalYears"]
     for fy in fyList:
-        if fy['code'] == code:
+        if fy["code"] == code:
             return fy
 
     return None
+
 
 def get_expense_classes(client: FolioClient) -> dict:
     """
@@ -198,10 +199,10 @@ def get_encumbrances(client: FolioClient, pol_id: str, fy_id: str) -> list:
 
 
 def reencumber_pol(
-        client: FolioClient,
-        pol: dict,
-        verbose: bool,
-        err_fp,
+    client: FolioClient,
+    pol: dict,
+    verbose: bool,
+    err_fp,
 ) -> tuple[str, str, str]:
     """
     Set the fund for the POL, release encumbrance on old fund and re-encumber on new fund.
@@ -227,14 +228,20 @@ def reencumber_pol(
         err_fp.write("\nEND original POL fund dist:\n")
 
     # delete fundDistribution
-    my_pol.pop('fundDistribution')
+    my_pol.pop("fundDistribution")
     resp = requests.put(pol_url, headers=client.okapi_headers, data=json.dumps(my_pol))
     if verbose:
         err_fp.write(pol_url + "\n")
-        err_fp.write(f"Delete fundDistribution:\nstatus = {resp.status_code};\ntext = {resp.text}\n")
+        err_fp.write(
+            f"Delete fundDistribution:\nstatus = {resp.status_code};\ntext = {resp.text}\n"
+        )
         err_fp.write(pol_url + "\n")
     if resp.status_code != 204:
-        return (resp.status_code, "failed to remove fund distribution: \n" + resp.text, json.dumps(fundDistListOrig))
+        return (
+            resp.status_code,
+            "failed to remove fund distribution: \n" + resp.text,
+            json.dumps(fundDistListOrig),
+        )
 
     # Reencumber
     for fdist in fundDistList:
@@ -265,7 +272,7 @@ def reencumber_pol(
 
 
 def reset_fund_dist(
-        client: FolioClient, fundDist, fund_code: str, funds: dict
+    client: FolioClient, fundDist, fund_code: str, funds: dict
 ) -> tuple[str, str]:
     """
     Update all fund_code distributions.
@@ -349,18 +356,16 @@ def main_loop(client, in_csv, out_csv, verbose: bool, err_fp):
 
         # save fund(s) for logging output
         funds = []
-        for fdist in pol['fundDistribution']:
-            funds.append(fdist['code'])
+        for fdist in pol["fundDistribution"]:
+            funds.append(fdist["code"])
 
-        (status_code, msg, fundDistOrig) = reencumber_pol(
-            client, pol, verbose, err_fp
-        )
+        (status_code, msg, fundDistOrig) = reencumber_pol(client, pol, verbose, err_fp)
 
         out_csv.writerow(
             {
                 "timestamp": datetime.now(timezone.utc),
                 "pol_no": pol_no,
-                "fund": ' '.join(funds),
+                "fund": " ".join(funds),
                 "pol_id": pol["id"],
                 "status_code": status_code,
                 "message": msg,
@@ -418,7 +423,7 @@ def main():
     ]
 
     ecDict = get_expense_classes(client)
-    
+
     if args.dump_expense_classes:
         for ec in ecDict.values():
             print(f'{ec["code"]}\t{ec["name"]}\t{ec["id"]}')

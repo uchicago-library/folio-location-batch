@@ -46,9 +46,10 @@ def read_config(filename: str):
         error_exit(2, msg)
     return config
 
+
 def init_client(config):
     """Returns an initialized client object
-    
+
     This small function is convenient when using the interactive interpreter.
 
     Args:
@@ -127,7 +128,7 @@ def get_fiscal_year(client: FolioClient, code: str) -> dict:
     # TODO: modify query to only return the needed fiscal year (can't seem to get this right)
     fyList = client.folio_get("/finance/fiscal-years")["fiscalYears"]
     for fy in fyList:
-        if fy['code'] == code:
+        if fy["code"] == code:
             return fy
 
     return None
@@ -216,15 +217,20 @@ def reencumber_pol(
         err_fp.write("\nEND original POL fund dist:\n")
 
     # delete fundDistribution
-    my_pol.pop('fundDistribution')
+    my_pol.pop("fundDistribution")
     resp = requests.put(pol_url, headers=client.okapi_headers, data=json.dumps(my_pol))
     if verbose:
         err_fp.write(pol_url + "\n")
-        err_fp.write(f"Delete fundDistribution:\nstatus = {resp.status_code};\ntext = {resp.text}\n")
+        err_fp.write(
+            f"Delete fundDistribution:\nstatus = {resp.status_code};\ntext = {resp.text}\n"
+        )
         err_fp.write(pol_url + "\n")
     if resp.status_code != 204:
-        return (resp.status_code, "failed to remove fund distribution: \n" + resp.text, json.dumps(fundDistListOrig))
-
+        return (
+            resp.status_code,
+            "failed to remove fund distribution: \n" + resp.text,
+            json.dumps(fundDistListOrig),
+        )
 
     # Reencumber
     for fdist in fundDistList:
@@ -343,19 +349,16 @@ def main_loop(client, in_csv, out_csv, verbose: bool, err_fp):
 
         # save fund(s) for logging output
         funds = []
-        for fdist in pol['fundDistribution']:
-            funds.append(fdist['code'])
-            
+        for fdist in pol["fundDistribution"]:
+            funds.append(fdist["code"])
 
-        (status_code, msg, fundDistOrig) = reencumber_pol(
-            client, pol, verbose, err_fp
-        )        
+        (status_code, msg, fundDistOrig) = reencumber_pol(client, pol, verbose, err_fp)
 
         out_csv.writerow(
             {
                 "timestamp": datetime.now(timezone.utc),
                 "pol_no": pol_no,
-                "fund": ' '.join(funds),
+                "fund": " ".join(funds),
                 "pol_id": pol["id"],
                 "status_code": status_code,
                 "message": msg,
