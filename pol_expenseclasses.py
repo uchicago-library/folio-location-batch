@@ -1,12 +1,9 @@
 """Reset expense classes on purchase order lines.
-This script is useful in cleaning up after FYRO.
-If you identify POLs that had encumbrances in the old fiscal year,
-but FYRO did not create new encumbrances in the new fiscal year,
-this script can delete the old encumbrances and create new encumbrances.
+
 Workflow:
 1. retrieve the POL and save the old fund distribution in memory
 2. delete the fund distribution from the POL and save the POL, this will delete the old transactions
-3. Put new encumbrance ids in the fund distribution that was saved in memory, re-add to the POL and save. This should trigger new encumbrance transaction, keep the same funds, the same expense classes, and the same distribution type and value.
+3. Put new expense class ids in the fund distribution that was saved in memory, re-add to the POL and save. This should trigger new encumbrance transaction, keep the same funds and encumbrances, etc.
 """
 
 # feature branch
@@ -67,7 +64,7 @@ def parse_args():
     """Parse command line arguments and return a Namespace object."""
 
     parser = argparse.ArgumentParser(
-        description="Re-encumber funds on purchase order lines",
+        description="Reset expense classes on purchase order lines",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
