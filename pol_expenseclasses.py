@@ -72,8 +72,7 @@ def parse_args():
         "-D",
         "--dump_expense_classes",
         help="Read and print out expense classes.",
-        type=bool,
-        default=False,
+        action="store_true",
     )
 
     parser.add_argument(
@@ -147,6 +146,17 @@ def get_expense_classes(client: FolioClient) -> dict:
     for ec in client.get_all("/finance/expense-classes", "expenseClasses"):
         expclasses[ec["code"]] = ec
     return expclasses
+
+
+def dump_expense_classes(expense_classes: dict, file = sys.stdout):
+    """
+    Write out a human-readable summary of the expense classes.
+    Args:
+        expense_classes: dictionary of expense classes, indexed by "code"
+        file:            text file to write to (default: stdout)
+    """
+    for code, ec in expense_classes.items():
+        file.write(f'{code}\t{ec["name"]}\t{ec["id"]}\n')
 
 
 def get_funds(client: FolioClient) -> dict:
@@ -422,8 +432,7 @@ def main():
     ecDict = get_expense_classes(client)
 
     if args.dump_expense_classes:
-        for ec in ecDict.values():
-            print(f'{ec["code"]}\t{ec["name"]}\t{ec["id"]}')
+        dump_expense_classes(ecDict)
         sys.exit(0)
 
     main_loop(
