@@ -136,27 +136,28 @@ def get_fiscal_year(client: FolioClient, code: str) -> dict:
     return None
 
 
-def get_expense_classes(client: FolioClient) -> dict:
+def get_expense_classes(client: FolioClient) -> list:
     """
-    Returns a dictionary of all expense classe, indexed by fund code
+    Returns a list of all expense class objects
     Args:
         client: intialized FolioClient object
     """
-    expclasses = {}
-    for ec in client.get_all("/finance/expense-classes", "expenseClasses"):
-        expclasses[ec["code"]] = ec
-    return expclasses
+    exp_classes = []
+    exp_classes.extend(
+        client.get_all("/finance/expense-classes", "expenseClasses")
+    )
+    return exp_classes
 
 
-def dump_expense_classes(expense_classes: dict, file = sys.stdout):
+def dump_expense_classes(expense_classes: list, file = sys.stdout):
     """
     Write out a human-readable summary of the expense classes.
     Args:
         expense_classes: dictionary of expense classes, indexed by "code"
         file:            text file to write to (default: stdout)
     """
-    for code, ec in expense_classes.items():
-        file.write(f'{code}\t{ec["name"]}\t{ec["id"]}\n')
+    for ec in expense_classes:
+        file.write(f'{ec["id"]}\t{ec["code"]}\t{ec["name"]}\n')
 
 
 def get_funds(client: FolioClient) -> dict:
@@ -313,7 +314,7 @@ def write_result(out, output):
     out.write(output)
 
 
-def main_loop(client, in_csv, out_csv, verbose: bool, err_fp):
+def main_loop(client, exp_classes: list, in_csv, out_csv, verbose: bool, err_fp):
     """
     Update the fund code for each POL in input.
     Iterates over the input file, assumes the POL number is in the first column
@@ -321,13 +322,24 @@ def main_loop(client, in_csv, out_csv, verbose: bool, err_fp):
     Writes an output row for each POL.
     Args:
     client: initialized FolioClient object
+    exp_classes: expense classes
     in_csv: CSV reader object
     out_csv: CSV writer object
     verbose: enable more diagnostic messages to the error output
     err_fp: file pointer for error messages
     """
-    funds = get_funds(client)
-    # fiscal_year = get_fiscal_year(client)
+    #
+    # Set up needed look-up dictionarie
+    #
+    ec_by_id = {}
+    for ec in exp_classes:
+        ec_by_id[ec["id"]] = ec
+    ec_by_code = {}
+    for ec in exp_classes:
+        ec_by_code[ec["code"]] = ec
+    ec_by_name = {}
+    for ec in exp_classes:
+        ec_by_name[ec["name"]] = ec
 
     out_csv.writeheader()
 
@@ -397,7 +409,8 @@ def main2():
         "pol_id",
         "status_code",
         "message",
-        "original_fund_distribution",
+        "original_expense_code",
+        "original_expense_name",
         "manual_review",
     ]
     main_loop(
@@ -429,14 +442,15 @@ def main():
         "manual_review",
     ]
 
-    ecDict = get_expense_classes(client)
+    expense_classes = get_expense_classes(client)
 
     if args.dump_expense_classes:
-        dump_expense_classes(ecDict)
+        dump_expense_classes(expense_classes)
         sys.exit(0)
 
     main_loop(
         client,
+        expense_classes,
         csv.reader(args.infile, dialect=args.in_dialect),
         csv.DictWriter(args.outfile, fieldnames=fieldnames, dialect=args.out_dialect),
         verbose,
