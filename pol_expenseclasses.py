@@ -309,6 +309,82 @@ def reset_fund_dist(
     return (status_code, msg)
 
 
+def update_expense_class(
+    client: FolioClient,
+    pol: dict,
+    exp_class_id: str,
+    verbose: bool,
+    err_fp,
+) -> tuple[str, str, str]:
+    """
+    Set the expense class for the POL, release encumbrance on old expense class and re-encumber on new expense class.
+    If there is more than one fund distribution, this will update all fund distributions to the new expense class.
+    Args:
+        client: intialized FolioClient object
+        pol: purchase order line as dictionary
+        exp_class_id: UUID of the new expense class
+        verbose: enable more diagnostic messages to the error output
+        err_fp: file pointer for error messages
+    Returns:
+        Tuple of HTTP status code, plus message and original fund distribution list if error.
+    """
+    pol_path = f"/orders/order-lines/{pol['id']}"
+    pol_url = f"{client.okapi_url}/orders/order-lines/{pol['id']}"
+
+    my_pol = copy.deepcopy(pol)
+    fundDistList = pol["fundDistribution"]
+    fundDistListOrig = copy.deepcopy(fundDistList)
+
+    if verbose:
+        err_fp.write("original POL fund dist:\n")
+        json.dump(pol["fundDistribution"], err_fp, indent=2)
+        err_fp.write("\nEND original POL fund dist:\n")
+
+    # delete fundDistribution
+    my_pol.pop("fundDistribution")
+    resp = requests.put(pol_url, headers=client.okapi_headers, data=json.dumps(my_pol))
+    if verbose:
+        err_fp.write(pol_url + "\n")
+        err_fp.write(
+            f"Delete fundDistribution:\nstatus = {resp.status_code};\ntext = {resp.text}\n"
+        )
+        err_fp.write(pol_url + "\n")
+    if resp.status_code != 204:
+        return (
+            resp.status_code,
+            "failed to remove fund distribution: \n" + resp.text,
+            json.dumps(fundDistListOrig),
+        )
+
+    # Reencumber
+    for fdist in fundDistList:
+        # setting new encumbrance ID causes a new encumbrance to be created with the updated expense class
+        fdist["encumbrance"] = str(uuid.uuid4())
+        fdist["expenseClassId"] = exp_class_id
+    my_pol["fundDistribution"] = fundDistList
+    if verbose:
+        err_fp.write("updated POL fund dist:\n")
+        json.dump(my_pol["fundDistribution"], err_fp, indent=2)
+        err_fp.write("\nEND updated POL fund dist:\n")
+    resp = requests.put(pol_url, headers=client.okapi_headers, data=json.dumps(my_pol))
+
+    if verbose:
+        err_fp.write(pol_url + "\n")
+        err_fp.write(f"status = {resp.status_code};\ntext = {resp.text}\n")
+        err_fp.write(pol_url + "\n")
+
+    # Check updated POL...
+    if verbose:
+        updated_pol = client.folio_get(pol_path)
+        err_fp.write("updated POL fund dist:\n")
+        json.dump(updated_pol["fundDistribution"], err_fp, indent=2)
+        err_fp.write("\nEND updated POL fund dist:\n")
+
+    # ... and return the update results if the check is good
+
+    return (resp.status_code, resp.text, json.dumps(fundDistListOrig))
+
+
 def write_result(out, output):
     """Placeholder for writing output"""
     out.write(output)
@@ -329,7 +405,7 @@ def main_loop(client, exp_classes: list, in_csv, out_csv, verbose: bool, err_fp)
     err_fp: file pointer for error messages
     """
     #
-    # Set up needed look-up dictionarie
+    # Set up needed look-up dictionaries
     #
     ec_by_id = {}
     for ec in exp_classes:
@@ -345,6 +421,7 @@ def main_loop(client, exp_classes: list, in_csv, out_csv, verbose: bool, err_fp)
 
     for row in in_csv:
         pol_no = row[0]
+        exp_class_code = row[1]
         pol_id = None
         status_code = None
         msg = None
@@ -377,18 +454,30 @@ def main_loop(client, exp_classes: list, in_csv, out_csv, verbose: bool, err_fp)
         funds = []
         for fdist in pol["fundDistribution"]:
             funds.append(fdist["code"])
-
-        (status_code, msg, fundDistOrig) = reencumber_pol(client, pol, verbose, err_fp)
+            
+        (status_code, msg, fundDistOrig) = update_expense_class(
+            client, pol, ec_by_code[exp_class_code], verbose, err_fp
+        )
+        print(fundDistOrig)
+        print(type(fundDistOrig))
+        #sys.exit(1)
+        
+        orig_exp_code = []
+        orig_exp_name = []
+        for fdist in json.loads(fundDistOrig):
+            orig_exp_code.append(ec_by_id[fdist["expenseClassId"]]["code"])
+            orig_exp_name.append(ec_by_id[fdist["expenseClassId"]]["name"])
 
         out_csv.writerow(
             {
                 "timestamp": datetime.now(timezone.utc),
                 "pol_no": pol_no,
-                "fund": " ".join(funds),
+                "expense_code": exp_class_code,
                 "pol_id": pol["id"],
                 "status_code": status_code,
                 "message": msg,
-                "original_fund_distribution": fundDistOrig,
+                "original_expense_code": " ".join(orig_exp_code),
+                "original_expense_name": " ".join(orig_exp_name),
                 "manual_review": "N",
             }
         )
@@ -434,11 +523,12 @@ def main():
     fieldnames = [
         "timestamp",
         "pol_no",
-        "fund",
+        "expense_code",
         "pol_id",
         "status_code",
         "message",
-        "original_fund_distribution",
+        "original_expense_code",
+        "original_expense_name",
         "manual_review",
     ]
 
