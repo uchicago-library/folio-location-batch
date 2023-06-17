@@ -331,9 +331,18 @@ def update_expense_class(
     pol_path = f"/orders/order-lines/{pol['id']}"
     pol_url = f"{client.okapi_url}/orders/order-lines/{pol['id']}"
 
+    if verbose:
+        err_fp.write(f"Entered update_expense_class, Expense class id: {exp_class_id}")
+
     my_pol = copy.deepcopy(pol)
-    fundDistList = pol["fundDistribution"]
-    fundDistListOrig = copy.deepcopy(fundDistList)
+
+    # set up new fund distribution with updated expense classes
+    fund_dist_list = pol["fundDistribution"]
+    my_fund_dist_list = copy.deepcopy(fund_dist_list)
+    for fdist in my_fund_dist_list:
+        # setting new encumbrance ID causes an a new encumbrance to be created on the fund
+        fdist["encumbrance"] = str(uuid.uuid4())
+        fdist["expenseClassId"] = exp_class_id
 
     if verbose:
         err_fp.write("original POL fund dist:\n")
@@ -353,19 +362,16 @@ def update_expense_class(
         return (
             resp.status_code,
             "failed to remove fund distribution: \n" + resp.text,
-            json.dumps(fundDistListOrig),
+            json.dumps(fund_dist_list),
         )
 
     # Reencumber
-    for fdist in fundDistList:
-        # setting new encumbrance ID causes a new encumbrance to be created with the updated expense class
-        fdist["encumbrance"] = str(uuid.uuid4())
-        fdist["expenseClassId"] = exp_class_id
-    my_pol["fundDistribution"] = fundDistList
+    my_pol["fundDistribution"] = my_fund_dist_list
     if verbose:
         err_fp.write("updated POL fund dist:\n")
         json.dump(my_pol["fundDistribution"], err_fp, indent=2)
         err_fp.write("\nEND updated POL fund dist:\n")
+        err_fp.write("Single line dump of POL:\n" + json.dumps(my_pol) + "\n")
     resp = requests.put(pol_url, headers=client.okapi_headers, data=json.dumps(my_pol))
 
     if verbose:
@@ -382,7 +388,7 @@ def update_expense_class(
 
     # ... and return the update results if the check is good
 
-    return (resp.status_code, resp.text, json.dumps(fundDistListOrig))
+    return (resp.status_code, resp.text, json.dumps(fund_dist_list))
 
 
 def write_result(out, output):
@@ -454,14 +460,11 @@ def main_loop(client, exp_classes: list, in_csv, out_csv, verbose: bool, err_fp)
         funds = []
         for fdist in pol["fundDistribution"]:
             funds.append(fdist["code"])
-            
+
         (status_code, msg, fundDistOrig) = update_expense_class(
             client, pol, ec_by_code[exp_class_code], verbose, err_fp
         )
-        print(fundDistOrig)
-        print(type(fundDistOrig))
-        #sys.exit(1)
-        
+    
         orig_exp_code = []
         orig_exp_name = []
         for fdist in json.loads(fundDistOrig):
@@ -514,7 +517,10 @@ def main2():
 
 def main():
     verbose = False
+
     args = parse_args()
+    if args.verbose > 0:
+        verbose = True
     config = read_config(args.config_file)
     # Logic or function to override config values from the command line arguments would go here
 
