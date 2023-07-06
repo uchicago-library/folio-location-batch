@@ -87,6 +87,7 @@ def parse_args():
         "--outfile",
         help="Output file (truncate if exists, default: stdout)",
         default=sys.stdout,
+        type=argparse.FileType("w"),
     )
     parser.add_argument(
         "-I",
@@ -462,7 +463,7 @@ def main_loop(client, exp_classes: list, in_csv, out_csv, verbose: bool, err_fp)
             funds.append(fdist["code"])
 
         (status_code, msg, fundDistOrig) = update_expense_class(
-            client, pol, ec_by_code[exp_class_code], verbose, err_fp
+            client, pol, ec_by_code[exp_class_code]['id'], verbose, err_fp
         )
     
         orig_exp_code = []
