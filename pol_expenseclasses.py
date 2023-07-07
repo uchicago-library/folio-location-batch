@@ -457,6 +457,23 @@ def main_loop(client, exp_classes: list, in_csv, out_csv, verbose: bool, err_fp)
             )
             continue
 
+        problem_fdist = None
+        for fdist in pol["fundDistribution"]:
+            if "expenseClassId" not in fdist:
+                problem_fdist = fdist
+        if problem_fdist is not None:
+            out_csv.writerow(
+                {
+                    "timestamp": datetime.now(timezone.utc),
+                    "pol_no": pol_no,
+                    "expense_code": exp_class_code,
+                    "pol_id": pol["id"],
+                    "message": f"fund distribution has no expenseClassID: {problem_fdist}",
+                    "manual_review": "y",
+                }
+            )
+            continue
+
         # save fund(s) for logging output
         funds = []
         for fdist in pol["fundDistribution"]:
