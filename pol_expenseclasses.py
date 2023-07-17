@@ -2,8 +2,11 @@
 
 Workflow:
 1. retrieve the POL and save the old fund distribution in memory
-2. delete the fund distribution from the POL and save the POL, this will delete the old transactions
-3. Put new expense class ids in the fund distribution that was saved in memory, re-add to the POL and save. This should trigger new encumbrance transaction, keep the same funds and encumbrances, etc.
+2. delete the fund distribution from the POL and save the POL, this will delete 
+   the old transactions
+3. Put new expense class ids in the fund distribution that was saved in memory,
+   re-add to the POL and save. This should trigger new encumbrance transaction,
+   keep the same funds and encumbrances, etc.
 """
 
 # feature branch
@@ -25,14 +28,13 @@ from folioclient.FolioClient import FolioClient
 
 
 def error_exit(status, msg):
-    """Convenience function to write out an error message and terminate with an exit status."""
+    """Write out an error message and terminate with an exit status (convenience function)."""
     sys.stderr.write(msg)
     sys.exit(status)
 
 
 def read_config(filename: str):
-    """Parse the named config file and return an config object"""
-
+    """Parse the named config file and return an config object."""
     config = configparser.ConfigParser()
     try:
         config.read_file(open(filename))
@@ -46,7 +48,7 @@ def read_config(filename: str):
 
 
 def init_client(config):
-    """Returns an initialized client object
+    """Return an initialized client object.
 
     This small function is convenient when using the interactive interpreter.
     Args:
@@ -62,7 +64,6 @@ def init_client(config):
 
 def parse_args():
     """Parse command line arguments and return a Namespace object."""
-
     parser = argparse.ArgumentParser(
         description="Reset expense classes on purchase order lines",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -122,6 +123,7 @@ def parse_args():
 def get_fiscal_year(client: FolioClient, code: str) -> dict:
     """
     Look up fiscal year by code.
+
     Args:
         client: intialized FolioClient object
         code: code for the desired fiscal year
@@ -139,20 +141,20 @@ def get_fiscal_year(client: FolioClient, code: str) -> dict:
 
 def get_expense_classes(client: FolioClient) -> list:
     """
-    Returns a list of all expense class objects
+    Return a list of all expense class objects.
+    
     Args:
         client: intialized FolioClient object
     """
     exp_classes = []
-    exp_classes.extend(
-        client.get_all("/finance/expense-classes", "expenseClasses")
-    )
+    exp_classes.extend(client.get_all("/finance/expense-classes", "expenseClasses"))
     return exp_classes
 
 
-def dump_expense_classes(expense_classes: list, file = sys.stdout):
+def dump_expense_classes(expense_classes: list, file=sys.stdout):
     """
     Write out a human-readable summary of the expense classes.
+    
     Args:
         expense_classes: dictionary of expense classes, indexed by "code"
         file:            text file to write to (default: stdout)
@@ -163,7 +165,8 @@ def dump_expense_classes(expense_classes: list, file = sys.stdout):
 
 def get_funds(client: FolioClient) -> dict:
     """
-    Returns a dictionary of all funds, indexed by fund code
+    Return a dictionary of all funds, indexed by fund code.
+    
     Args:
         client: intialized FolioClient object
     """
@@ -176,6 +179,7 @@ def get_funds(client: FolioClient) -> dict:
 def get_pol_by_line_no(client: FolioClient, pol_no: str) -> dict:
     """
     Look up POL by line number.
+    
     Args:
         client: intialized FolioClient object
         pol_no: POL number
@@ -215,6 +219,7 @@ def reencumber_pol(
 ) -> tuple[str, str, str]:
     """
     Set the fund for the POL, release encumbrance on old fund and re-encumber on new fund.
+    
     If there is more than one fund distribution, this will update all fund distributions to the new fund
     Args:
         client: intialized FolioClient object
@@ -285,6 +290,7 @@ def reset_fund_dist(
 ) -> tuple[str, str]:
     """
     Update all fund_code distributions.
+    
     For each fund_code distribution, first release the encumbrance.
     """
     status_code = None
@@ -319,7 +325,9 @@ def update_expense_class(
 ) -> tuple[str, str, str]:
     """
     Set the expense class for the POL, release encumbrance on old expense class and re-encumber on new expense class.
+    
     If there is more than one fund distribution, this will update all fund distributions to the new expense class.
+    
     Args:
         client: intialized FolioClient object
         pol: purchase order line as dictionary
@@ -393,23 +401,25 @@ def update_expense_class(
 
 
 def write_result(out, output):
-    """Placeholder for writing output"""
+    """Write output (placeholder)."""
     out.write(output)
 
 
 def main_loop(client, exp_classes: list, in_csv, out_csv, verbose: bool, err_fp):
     """
     Update the fund code for each POL in input.
+    
     Iterates over the input file, assumes the POL number is in the first column
     and new fund code is in the second column.
     Writes an output row for each POL.
+    
     Args:
-    client: initialized FolioClient object
-    exp_classes: expense classes
-    in_csv: CSV reader object
-    out_csv: CSV writer object
-    verbose: enable more diagnostic messages to the error output
-    err_fp: file pointer for error messages
+        client: initialized FolioClient object
+        exp_classes: expense classes
+        in_csv: CSV reader object
+        out_csv: CSV writer object
+        verbose: enable more diagnostic messages to the error output
+        err_fp: file pointer for error messages
     """
     #
     # Set up needed look-up dictionaries
@@ -480,9 +490,9 @@ def main_loop(client, exp_classes: list, in_csv, out_csv, verbose: bool, err_fp)
             funds.append(fdist["code"])
 
         (status_code, msg, fundDistOrig) = update_expense_class(
-            client, pol, ec_by_code[exp_class_code]['id'], verbose, err_fp
+            client, pol, ec_by_code[exp_class_code]["id"], verbose, err_fp
         )
-    
+
         orig_exp_code = []
         orig_exp_name = []
         for fdist in json.loads(fundDistOrig):

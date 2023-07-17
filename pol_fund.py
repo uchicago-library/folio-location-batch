@@ -1,5 +1,27 @@
 """Update the funds in purchase order lines.
+
+Use this to update funds on POLs, especially when moving encumbrances to different
+funds as part of post-fiscal year rollover activity.
+
+Workflow:
+1. Look up POL by line number,
+2. look up unreleased encumbrances,
+3. release the encumbrances, and
+4. recreate encumbrances of the same amounts on the new fund
+
+Note: all entries in the fund distribution will be set to the same new fund. This
+is a limitation of this automated process as when we give a specific new fund per
+POL.
 """
+
+##
+# TODO:
+#
+# Clean up folioclient import lines
+#
+# Update FolioClient version and check for relevant get_* methods for financial data
+#
+# Remove dead code
 
 import argparse
 import configparser
@@ -17,14 +39,13 @@ from folioclient.FolioClient import FolioClient
 
 
 def error_exit(status, msg):
-    """Convenience function to write out an error message and terminate with an exit status."""
+    """Write out an error message and terminate with an exit status (convenience function)."""
     sys.stderr.write(msg)
     sys.exit(status)
 
 
 def read_config(filename: str):
-    """Parse the named config file and return an config object"""
-
+    """Parse the named config file and return an config object."""
     config = configparser.ConfigParser()
     try:
         config.read_file(open(filename))
@@ -38,7 +59,7 @@ def read_config(filename: str):
 
 
 def init_client(config):
-    """Returns an initialized client object
+    """Return an initialized client object.
 
     This small function is convenient when using the interactive interpreter.
 
@@ -55,9 +76,8 @@ def init_client(config):
 
 def parse_args():
     """Parse command line arguments and return a Namespace object."""
-
     parser = argparse.ArgumentParser(
-        description="Update the fund code on purchase order lines.",
+        description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         # formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -108,7 +128,7 @@ def parse_args():
 
 def get_fiscal_year(client: FolioClient) -> dict:
     """
-    Returns current fiscal year as a dictionary
+    Return current fiscal year as a dictionary.
 
     This implementation uses the Python date objects, which are naive about timezones and work at the full day level.
     FY start and end are formatted as full ISO dates, but seem to apply to the whole day.
@@ -141,7 +161,7 @@ def get_fiscal_year(client: FolioClient) -> dict:
 
 def get_funds(client: FolioClient) -> dict:
     """
-    Returns a dictionary of all funds, indexed by fund code
+    Return a dictionary of all funds, indexed by fund code.
 
     Args:
         client: intialized FolioClient object
@@ -182,6 +202,16 @@ def get_pol_by_line_no(client: FolioClient, pol_no: str) -> dict:
 
 
 def get_encumbrances(client: FolioClient, pol_id: str, fy_id: str) -> list:
+    """Look up all encumbrances for a POL in a fiscal year.
+
+    Args:
+        client: intialized FolioClient object
+        pol_id: POL UUID
+        fy_id:  fiscal year UUID
+
+    Returns:
+        A list object containing the transaction data.
+    """
     enc_result = client.folio_get(
         "/finance-storage/transactions",
         query=f"?query=(encumbrance.sourcePoLineId={pol_id} and fiscalYearId={fy_id})",
@@ -290,7 +320,7 @@ def reset_fund_dist(
 
 
 def write_result(out, output):
-    """Placeholder for writing output"""
+    """Write output (placeholder function)."""
     out.write(output)
 
 
@@ -440,6 +470,7 @@ def main_loop(client, in_csv, out_csv, verbose: bool, err_fp):
 
 
 def main():
+    """Read command line arguments and config file and call main loop."""
     verbose = False
     args = parse_args()
     config = read_config(args.config_file)
