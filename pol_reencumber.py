@@ -1,6 +1,9 @@
-"""Re-encumber funds on purchase order lines.
+"""Re-encumber funds on purchase order lines. RETIRED
 
-This script is useful in cleaning up after FYRO. 
+This script was useful in cleaning up after the first FYRO.
+We currently do not expect it to be useful anymore and consider it retired, of historical interest only.
+However, it gives a window into how encumbrances can be updated.
+
 If you identify POLs that had encumbrances in the old fiscal year, 
 but FYRO did not create new encumbrances in the new fiscal year,
 this script can delete the old encumbrances and create new encumbrances.
@@ -67,7 +70,7 @@ def parse_args():
     """Parse command line arguments and return a Namespace object."""
 
     parser = argparse.ArgumentParser(
-        description="Re-encumber funds on purchase order lines",
+        description="Re-encumber funds on purchase order lines - RETIRED",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
