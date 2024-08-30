@@ -25,6 +25,10 @@ Used annually to reassign funds on open orders.
 
 ### pol_reencumber.py
 
+*Historical interest only.*
+*This script is only here as a reference. It is unlikely to be needed
+again and should be considered retired.*
+
 Re-encumber funds on purchase order lines.
 
 Used when rollover failed to encumber funds in new fiscal year for open orders.

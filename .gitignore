@@ -1,3 +1,9 @@
+# Config files to ignore...
+config.ini
+config-*.ini
+# ... but track the config template!
+!config-template.ini
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
